@@ -1,0 +1,486 @@
+<script>
+   const App = {
+      // ---------------------------------------------------------------------------
+      // PROPIEDADES (Variables de estado y configuración)
+      // ---------------------------------------------------------------------------
+      user: '',
+      refreshIntervalId: null,
+      allTrasladosData: [], // Almacenará solo los datos de la página actual
+      configOptions: {},
+
+      // --- NUEVAS PROPIEDADES DE PAGINACIÓN ---
+      pagination: {
+         currentPage: 1,
+         totalPages: 1,
+         pageSize: 30 // Puedes cambiar este número para mostrar más o menos registros por página
+      },
+
+      // ---------------------------------------------------------------------------
+      // MÉTODOS DE INICIALIZACIÓN
+      // ---------------------------------------------------------------------------
+
+      /**
+       * Método principal que arranca la aplicación.
+       */
+      init: function () {
+         this.cacheDOM();
+         this.bindEvents();
+      },
+
+      /**
+       * Guarda las referencias a los elementos del DOM.
+       */
+      cacheDOM: function () {
+         // Secciones principales
+         this.loginSection = document.getElementById('login-section');
+         this.mainApp = document.getElementById('main-app');
+
+         // Formularios
+         this.loginForm = document.getElementById('login-form');
+         this.pacienteForm = document.getElementById('paciente-form');
+         this.atencionForm = document.getElementById('atencion-form');
+         this.editForm = document.getElementById('edit-form');
+
+         // Botones
+         this.navButtons = document.querySelectorAll('.nav-button');
+         this.logoutButton = document.getElementById('logout-button');
+         this.cancelEditBtn = document.getElementById('cancel-edit-btn');
+         this.searchButton = document.getElementById('search-button');
+
+         // Entradas y Selects
+         this.pacienteSelect = document.getElementById('paciente-select');
+         this.searchInput = document.getElementById('search-input');
+
+         // Elementos de UI
+         this.errorMessage = document.getElementById('error-message');
+         this.contentSections = document.querySelectorAll('.content-section');
+         this.loader = document.getElementById('loader');
+         this.datosTbody = document.getElementById('datos-tbody');
+         this.editModal = document.getElementById('edit-modal');
+         this.statusElements = {
+            paciente: document.getElementById('paciente-status'),
+            atencion: document.getElementById('atencion-status'),
+            ver: document.getElementById('ver-status')
+         };
+
+         // --- NUEVOS ELEMENTOS DEL DOM PARA PAGINACIÓN ---
+         this.paginationContainer = document.getElementById('pagination-container');
+         this.prevPageBtn = document.getElementById('prev-page-btn');
+         this.nextPageBtn = document.getElementById('next-page-btn');
+         this.pageInfo = document.getElementById('page-info');
+         this.clearSearchBtn = document.getElementById('clear-search-button');
+      },
+
+      /**
+       * Asigna los manejadores de eventos a los elementos del DOM.
+       */
+      bindEvents: function () {
+         this.loginForm.addEventListener('submit', this.handleLogin.bind(this));
+         this.pacienteForm.addEventListener('submit', this.handleSavePaciente.bind(this));
+         this.atencionForm.addEventListener('submit', this.handleSaveAtencion.bind(this));
+         this.editForm.addEventListener('submit', this.handleUpdateAtencion.bind(this));
+         this.logoutButton.addEventListener('click', this.handleLogout.bind(this));
+         this.datosTbody.addEventListener('click', this.handleTableActions.bind(this));
+         this.cancelEditBtn.addEventListener('click', () => this.editModal.classList.add('hidden'));
+         this.searchButton.addEventListener('click', this.performSearch.bind(this));
+         this.searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.performSearch();
+         });
+         this.navButtons.forEach(button => {
+            button.addEventListener('click', (e) => this.handleNavigation(e));
+         });
+
+         // --- NUEVOS EVENTOS PARA PAGINACIÓN ---
+         this.prevPageBtn.addEventListener('click', this.goToPrevPage.bind(this));
+         this.nextPageBtn.addEventListener('click', this.goToNextPage.bind(this));
+         this.clearSearchBtn.addEventListener('click', this.clearSearch.bind(this));
+      },
+
+      // ---------------------------------------------------------------------------
+      // MANEJADORES DE EVENTOS (Lógica de Acciones de Usuario)
+      // ---------------------------------------------------------------------------
+
+      handleLogin: function (e) {
+         e.preventDefault();
+         const btn = e.target.querySelector('button');
+         this.toggleButton(btn, false, 'Verificando...');
+         this.errorMessage.classList.add('hidden');
+
+         const username = document.getElementById('username').value;
+         const password = document.getElementById('password').value;
+
+         google.script.run
+            .withSuccessHandler(response => {
+               if (response.success) {
+                  this.user = response.username;
+                  this.loadInitialData();
+               } else {
+                  this.errorMessage.textContent = 'Usuario o contraseña incorrectos.';
+                  this.errorMessage.classList.remove('hidden');
+                  this.toggleButton(btn, true, 'Ingresar');
+               }
+            })
+            .withFailureHandler(err => {
+               this.errorMessage.textContent = 'Error de conexión. Intente de nuevo.';
+               this.errorMessage.classList.remove('hidden');
+               console.error(err);
+               this.toggleButton(btn, true, 'Ingresar');
+            })
+            .autenticarUsuario(username, password);
+      },
+
+      handleNavigation: function (e) {
+         const button = e.currentTarget;
+         this.navButtons.forEach(btn => btn.classList.remove('active'));
+         button.classList.add('active');
+         this.contentSections.forEach(section => section.classList.add('hidden'));
+
+         // Ocultar paginación por defecto
+         this.paginationContainer.style.display = 'none';
+
+         if (this.refreshIntervalId) {
+            clearInterval(this.refreshIntervalId);
+            this.refreshIntervalId = null;
+         }
+
+         const targetId = button.id.replace('nav-', '') + '-section';
+         document.getElementById(targetId).classList.remove('hidden');
+
+         if (targetId === 'atencion-section') this.loadPacientesDropdown();
+         if (targetId === 'ver-section') {
+            this.pagination.currentPage = 1; // Siempre reiniciar a la página 1 al navegar
+            this.loadTraslados();
+            // El contenedor de paginación se mostrará cuando se rendericen los controles
+         }
+      },
+
+      handleTableActions: function (e) {
+         const target = e.target;
+         const atencionId = target.dataset.id;
+         if (!atencionId) return;
+
+         if (target.classList.contains('delete-btn')) {
+            if (confirm(`¿Estás seguro de que deseas eliminar la atención ID: ${atencionId}?`)) {
+               google.script.run
+                  .withSuccessHandler(msg => {
+                     this.showStatus('ver', msg, 'success');
+                     this.loadTraslados(); // Recargar la página actual
+                  })
+                  .withFailureHandler(err => this.showStatus('ver', 'Error al eliminar: ' + err.message, 'error'))
+                  .eliminarAtencion(atencionId, this.user);
+            }
+         } else if (target.classList.contains('edit-btn')) {
+            this.openEditModal(atencionId);
+         }
+      },
+
+      handleSavePaciente: function (e) {
+         e.preventDefault();
+         const btn = e.target.querySelector('button');
+         this.toggleButton(btn, false, 'Guardando...');
+         const data = {
+            apellido: document.getElementById('apellido').value,
+            nombre: document.getElementById('nombre').value,
+            dni: document.getElementById('dni').value,
+            direccion: document.getElementById('direccion').value,
+            genero: document.getElementById('genero').value,
+            fechaNacimiento: document.getElementById('fechaNacimiento').value,
+            detalles: document.getElementById('detalles').value,
+         };
+         google.script.run
+            .withSuccessHandler(msg => {
+               this.showStatus('paciente', msg, 'success');
+               this.pacienteForm.reset();
+               this.loadPacientesDropdown();
+               this.toggleButton(btn, true, 'Guardar Paciente');
+            })
+            .withFailureHandler(err => {
+               this.showStatus('paciente', 'Error: ' + err.message, 'error');
+               this.toggleButton(btn, true, 'Guardar Paciente');
+            })
+            .guardarPaciente(data, this.user);
+      },
+
+      handleSaveAtencion: function (e) {
+         e.preventDefault();
+         const btn = e.target.querySelector('button');
+         this.toggleButton(btn, false, 'Guardando...');
+         const data = {
+            pacienteId: this.pacienteSelect.value,
+            fechaTraslado: document.getElementById('fechaTraslado').value,
+            origen: document.getElementById('origen').value,
+            destino: document.getElementById('destino').value,
+            establecimiento: document.getElementById('establecimiento').value,
+            diagnostico: document.getElementById('diagnostico').value,
+            vehiculo: document.getElementById('vehiculo').value,
+            chofer: document.getElementById('chofer').value,
+            observaciones: document.getElementById('observaciones').value,
+         };
+         google.script.run
+            .withSuccessHandler(msg => {
+               this.showStatus('atencion', msg, 'success');
+               this.atencionForm.reset();
+               this.toggleButton(btn, true, 'Guardar Traslado');
+            })
+            .withFailureHandler(err => {
+               this.showStatus('atencion', 'Error: ' + err.message, 'error');
+               this.toggleButton(btn, true, 'Guardar Traslado');
+            })
+            .guardarAtencion(data, this.user);
+      },
+
+      handleUpdateAtencion: function (e) {
+         e.preventDefault();
+         const data = {
+            id_atencion: document.getElementById('edit-atencion-id').value,
+            id_paciente: document.getElementById('edit-paciente-select').value,
+            fechaTraslado: document.getElementById('edit-fechaTraslado').value,
+            origen: document.getElementById('edit-origen').value,
+            destino: document.getElementById('edit-destino').value,
+            establecimiento: document.getElementById('edit-establecimiento').value,
+            diagnostico: document.getElementById('edit-diagnostico').value,
+            vehiculo: document.getElementById('edit-vehiculo').value,
+            chofer: document.getElementById('edit-chofer').value,
+            observaciones: document.getElementById('edit-observaciones').value,
+         };
+         google.script.run
+            .withSuccessHandler(msg => {
+               this.showStatus('ver', msg, 'success');
+               this.editModal.classList.add('hidden');
+               this.loadTraslados();
+            })
+            .withFailureHandler(err => this.showStatus('ver', 'Error al actualizar: ' + err.message, 'error'))
+            .actualizarAtencion(data, this.user);
+      },
+
+      handleLogout: function () {
+         if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+            this.toggleButton(this.logoutButton, false, 'Cerrando...');
+            google.script.run
+               .withSuccessHandler(() => window.location.reload())
+               .withFailureHandler(() => window.location.reload())
+               .logAction(this.user, 'CIERRE DE SESIÓN', 'El usuario cerró la sesión.');
+         }
+      },
+
+      goToPrevPage: function () {
+         if (this.pagination.currentPage > 1) {
+            this.pagination.currentPage--;
+            this.loadTraslados();
+         }
+      },
+
+      goToNextPage: function () {
+         if (this.pagination.currentPage < this.pagination.totalPages) {
+            this.pagination.currentPage++;
+            this.loadTraslados();
+         }
+      },
+
+      // ---------------------------------------------------------------------------
+      // MÉTODOS DE DATOS (Carga y manipulación de datos)
+      // ---------------------------------------------------------------------------
+
+      loadInitialData: function () {
+         google.script.run.withSuccessHandler(options => {
+            this.configOptions = options;
+            this.loginSection.classList.add('hidden');
+            this.mainApp.classList.remove('hidden');
+            this.populateAllSelects();
+         }).obtenerOpcionesConfiguracion();
+      },
+
+      loadPacientesDropdown: function (targetSelectId, selectedValue) {
+         google.script.run.withSuccessHandler(pacientes => {
+            const selectElement = targetSelectId ? document.getElementById(targetSelectId) : this.pacienteSelect;
+            selectElement.innerHTML = `<option value="">-- Seleccione un Paciente --</option>`;
+            pacientes.forEach(p => {
+               const option = new Option(`${p.apellido}, ${p.nombre}`, p.id);
+               selectElement.add(option);
+            });
+            if (selectedValue) selectElement.value = selectedValue;
+         }).obtenerListaPacientes();
+      },
+
+      loadTraslados: function () {
+         this.loader.classList.remove('hidden');
+         this.datosTbody.innerHTML = '';
+         this.toggleButton(this.prevPageBtn, false);
+         this.toggleButton(this.nextPageBtn, false);
+
+         google.script.run
+            .withSuccessHandler(response => {
+               this.allTrasladosData = response.data;
+               this.pagination.currentPage = response.currentPage;
+               this.pagination.totalPages = response.totalPages;
+
+               this.renderTable(this.allTrasladosData);
+               this.renderPaginationControls();
+               this.loader.classList.add('hidden');
+            })
+            .withFailureHandler(err => {
+               this.loader.textContent = 'Error al cargar los datos.';
+               console.error(err);
+            })
+            .obtenerDatosCompletos(this.pagination.currentPage, this.pagination.pageSize);
+      },
+
+      openEditModal: function (atencionId) {
+         google.script.run.withSuccessHandler(data => {
+            if (data) {
+               this.loadPacientesDropdown('edit-paciente-select', data.id_paciente);
+               document.getElementById('edit-atencion-id').value = data.id_atencion;
+               document.getElementById('edit-fechaTraslado').value = data.fechaTraslado;
+               document.getElementById('edit-origen').value = data.origen;
+               document.getElementById('edit-destino').value = data.destino;
+               document.getElementById('edit-establecimiento').value = data.establecimiento;
+               document.getElementById('edit-diagnostico').value = data.diagnostico;
+               document.getElementById('edit-vehiculo').value = data.vehiculo;
+               document.getElementById('edit-chofer').value = data.chofer;
+               document.getElementById('edit-observaciones').value = data.observaciones;
+               this.editModal.classList.remove('hidden');
+            } else {
+               this.showStatus('ver', 'No se encontraron datos para la atención.', 'error');
+            }
+         }).obtenerAtencionPorId(atencionId);
+      },
+
+      // REEMPLAZA ESTA FUNCIÓN EN main.html
+      performSearch: function () {
+         const searchTerm = this.searchInput.value.trim();
+         if (!searchTerm) {
+            alert('Por favor, ingrese un término de búsqueda.');
+            return;
+         }
+
+         this.loader.classList.remove('hidden');
+         this.datosTbody.innerHTML = '';
+         this.paginationContainer.style.display = 'none'; // Ocultar paginación durante la búsqueda
+
+         google.script.run
+            .withSuccessHandler(resultados => {
+               this.renderTable(resultados);
+               this.loader.classList.add('hidden');
+               this.clearSearchBtn.style.display = 'inline-block'; // Mostrar el botón de limpiar
+            })
+            .withFailureHandler(err => {
+               this.loader.textContent = 'Error en la búsqueda.';
+               console.error(err);
+               this.clearSearchBtn.style.display = 'inline-block';
+            })
+            .buscarTraslados(searchTerm);
+      },
+
+      // ---------------------------------------------------------------------------
+      // MÉTODOS DE UI (Renderizado y manipulación del DOM)
+      // ---------------------------------------------------------------------------
+
+      renderTable: function (datos) {
+         this.datosTbody.innerHTML = '';
+         if (datos.length === 0) {
+            this.datosTbody.innerHTML = '<tr><td colspan="13" style="text-align: center;">No se encontraron registros.</td></tr>';
+            return;
+         }
+         const rowsHtml = datos.map(row => `
+        <tr>
+            <td>${row.idAtencion}</td>
+            <td>${row.fechaRegistro}</td>
+            <td>${row.horaRegistro}</td>
+            <td>${row.fechaTraslado}</td>
+            <td>${row.paciente}</td>
+            <td>${row.dni}</td>
+            <td>${row.origen}</td>
+            <td>${row.destino}</td>
+            <td>${row.establecimiento}</td>
+            <td>${row.diagnostico}</td>
+            <td>${row.vehiculo}</td>
+            <td>${row.chofer}</td>
+            <td>
+                <button class="action-button edit-btn" data-id="${row.idAtencion}">Editar</button>
+                <button class="action-button delete-btn" data-id="${row.idAtencion}">Eliminar</button>
+            </td>
+        </tr>
+    `).join('');
+         this.datosTbody.innerHTML = rowsHtml;
+      },
+
+      populateAllSelects: function () {
+         const selectMappings = {
+            'genero': 'genero', // <-- AÑADIR ESTA LÍNEA
+            'origen': 'origen',
+            'destino': 'destino',
+            'establecimiento': 'establecimiento',
+            'diagnostico': 'diagnostico',
+            'vehiculo': 'vehiculo',
+            'chofer': 'chofer',
+            'edit-origen': 'origen',
+            'edit-destino': 'destino',
+            'edit-establecimiento': 'establecimiento',
+            'edit-diagnostico': 'diagnostico',
+            'edit-vehiculo': 'vehiculo',
+            'edit-chofer': 'chofer'
+         };
+         for (const selectId in selectMappings) {
+            const element = document.getElementById(selectId);
+            const optionKey = selectMappings[selectId];
+            if (element && this.configOptions[optionKey]) {
+               const placeholder = element.options[0];
+               element.innerHTML = '';
+               element.appendChild(placeholder);
+               this.configOptions[optionKey].forEach(value => {
+                  const option = new Option(value, value);
+                  element.add(option);
+               });
+            }
+         }
+      },
+
+      renderPaginationControls: function () {
+         const {
+            currentPage,
+            totalPages
+         } = this.pagination;
+
+         if (totalPages <= 1) {
+            this.paginationContainer.style.display = 'none';
+            return;
+         }
+
+         this.paginationContainer.style.display = 'flex';
+         this.pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
+
+         // Habilitar/deshabilitar botón "Anterior"
+         this.toggleButton(this.prevPageBtn, currentPage > 1, 'Anterior');
+
+         // Habilitar/deshabilitar botón "Siguiente"
+         this.toggleButton(this.nextPageBtn, currentPage < totalPages, 'Siguiente');
+      },
+
+      showStatus: function (sectionKey, message, type) {
+         const element = this.statusElements[sectionKey];
+         if (element) {
+            element.textContent = message;
+            element.className = `status-message ${type}`;
+            element.classList.remove('hidden');
+            setTimeout(() => element.classList.add('hidden'), 5000);
+         }
+      },
+
+      toggleButton: function (button, enable, text) {
+         button.disabled = !enable;
+         if (text) button.textContent = text;
+
+      },
+      // AÑADE ESTA NUEVA FUNCIÓN DENTRO DEL OBJETO App EN main.html
+      clearSearch: function () {
+         this.searchInput.value = ''; // Limpiar el campo de texto
+         this.clearSearchBtn.style.display = 'none'; // Ocultar el botón
+         this.pagination.currentPage = 1; // Volver a la primera página
+         this.loadTraslados(); // Cargar la vista paginada normal
+      },
+   };
+
+// Iniciar la aplicación una vez que el DOM esté listo.
+document.addEventListener('DOMContentLoaded', () => App.init());
+
+</script>

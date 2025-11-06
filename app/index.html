@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <base target="_top">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Sistema de Gestión de Pacientes y Traslados</title>
+      <style>
+         <?!= include('css'); ?>
+      </style>
+   </head>
+   <body>
+      <div class="container">
+         <div id="login-section">
+            <h1>Iniciar Sesión</h1>
+            <form id="login-form">
+               <input type="text" id="username" placeholder="Usuario" required>
+               <input type="password" id="password" placeholder="Contraseña" required>
+               <button type="submit" id="login-button">Ingresar</button>
+               <div id="error-message" class="hidden"></div>
+            </form>
+         </div>
+         <div id="main-app" class="hidden">
+            <div class="header-container">
+               <h1>Gestión de Pacientes y Traslados</h1>
+               <button id="logout-button">Cerrar Sesión</button>
+            </div>
+            <nav>
+               <button id="nav-paciente" class="nav-button active">Cargar Paciente</button>
+               <button id="nav-atencion" class="nav-button">Cargar Traslado</button>
+               <button id="nav-ver" class="nav-button">Ver Datos</button>
+            </nav>
+            <section id="paciente-section" class="content-section">
+               <h2>Registrar Nuevo Paciente</h2>
+               <form id="paciente-form">
+                  <div class="form-grid">
+                     <input type="text" id="apellido" placeholder="Apellido" required>
+                     <input type="text" id="nombre" placeholder="Nombre/s" required>
+                     <input type="text" id="dni" placeholder="DNI" required>
+                     <input type="text" id="direccion" placeholder="Dirección">
+                  </div>
+                  <div class="form-grid">
+                     <select id="genero" required>
+                        <option value="">-- Seleccione Género --</option>
+                     </select>
+                     <input type="date" id="fechaNacimiento" placeholder="Fecha de Nacimiento" required>
+                  </div>
+                  <textarea id="detalles" placeholder="Detalles Adicionales"></textarea>
+                  <button type="submit" id="submit-paciente-btn">Guardar Paciente</button>
+               </form>
+               <div id="paciente-status" class="status-message hidden"></div>
+            </section>
+            <section id="atencion-section" class="content-section hidden">
+               <h2>Registrar Nuevo Traslado</h2>
+               <form id="atencion-form">
+                  <select id="paciente-select" required>
+                     <option value="">-- Seleccione un Paciente --</option>
+                  </select>
+                  <div class="form-grid">
+                     <input type="date" id="fechaTraslado" placeholder="Fecha de Traslado" required>
+                     <select id="origen" required>
+                        <option value="">-- Seleccione un Origen --</option>
+                     </select>
+                     <select id="destino" required>
+                        <option value="">-- Seleccione un Destino --</option>
+                     </select>
+                     <select id="establecimiento" required>
+                        <option value="">-- Seleccione Establecimiento --</option>
+                     </select>
+                     <select id="diagnostico" required>
+                        <option value="">-- Seleccione Diagnóstico --</option>
+                     </select>
+                     <select id="vehiculo" required>
+                        <option value="">-- Seleccione Vehículo --</option>
+                     </select>
+                     <select id="chofer" required>
+                        <option value="">-- Seleccione Chofer --</option>
+                     </select>
+                  </div>
+                  <textarea id="observaciones" placeholder="Observaciones"></textarea>
+                  <button type="submit" id="submit-atencion-btn">Guardar Traslado</button>
+               </form>
+               <div id="atencion-status" class="status-message hidden"></div>
+            </section>
+            <section id="ver-section" class="content-section hidden">
+               <h2>Historial de Traslados</h2>
+               <div id="search-container">
+                  <input type="text" id="search-input" placeholder="Buscar por Nombre o DNI..." />
+                  <button id="search-button">Buscar</button>
+                  <button id="clear-search-button" class="action-button" style="display: none;">Limpiar Búsqueda</button>
+               </div>
+               <div id="pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1em;">
+                  <button id="prev-page-btn" class="action-button">Anterior</button>
+                  <span id="page-info"></span>
+                  <button id="next-page-btn" class="action-button">Siguiente</button>
+               </div>
+               <div id="ver-status" class="status-message hidden"></div>
+               <div id="loader">Cargando datos...</div>
+               <table id="datos-table">
+                  <thead>
+                     <tr>
+                        <th>ID</th>
+                        <th>Fecha de Registro</th>
+                        <th>Hora de Registro</th>
+                        <th>Fecha de Traslado</th>
+                        <th>Paciente</th>
+                        <th>DNI</th>
+                        <th>Origen</th>
+                        <th>Destino</th>
+                        <th>Establecimiento</th>
+                        <th>Diagnóstico</th>
+                        <th>Vehículo</th>
+                        <th>Chofer</th>
+                        <th>Acciones</th>
+                     </tr>
+                  </thead>
+                  <tbody id="datos-tbody"></tbody>
+               </table>
+            </section>
+         </div>
+      </div>
+      <div id="edit-modal" class="modal-overlay hidden">
+         <div class="modal-content">
+            <h2>Editar Atención</h2>
+            <form id="edit-form">
+               <input type="hidden" id="edit-atencion-id">
+               <select id="edit-paciente-select" required></select>
+               <div class="form-grid">
+                  <input type="date" id="edit-fechaTraslado" required>
+                  <select id="edit-origen" required>
+                     <option value="">-- Seleccione un Origen --</option>
+                  </select>
+                  <select id="edit-destino" required>
+                     <option value="">-- Seleccione un Destino --</option>
+                  </select>
+                  <select id="edit-establecimiento" required>
+                     <option value="">-- Seleccione Establecimiento --</option>
+                  </select>
+                  <select id="edit-diagnostico" required>
+                     <option value="">-- Seleccione Diagnóstico --</option>
+                  </select>
+                  <select id="edit-vehiculo" required>
+                     <option value="">-- Seleccione Vehículo --</option>
+                  </select>
+                  <select id="edit-chofer" required>
+                     <option value="">-- Seleccione Chofer --</option>
+                  </select>
+               </div>
+               <textarea id="edit-observaciones" placeholder="Observaciones"></textarea>
+               <div class="modal-actions">
+                  <button type="button" id="cancel-edit-btn" class="cancel-btn">Cancelar</button>
+                  <button type="submit">Guardar Cambios</button>
+               </div>
+            </form>
+         </div>
+      </div>
+      <?!= include('main'); ?>
+   </body>
+</html>
