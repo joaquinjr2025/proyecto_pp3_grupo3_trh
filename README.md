@@ -1,6 +1,6 @@
-# Proyecto Práctico 3 - Grupo 3 (TRH)
+# Práctica Profesionalizante 3 - Grupo 3 (TRH)
 
-Repositorio oficial del Grupo 3 (Termas de Río Hondo) para el Proyecto Práctico 3.
+Repositorio oficial del Grupo 3 (Termas de Río Hondo) para la materia de Práctica Profesionalizante 3.
 
 ## Descripción General
 
